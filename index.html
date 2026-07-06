@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>XAI Sandbox — client-side Shapley laboratory</title>
+<meta name="description" content="Train a model on tabular data in your browser and audit SHAP-style attributions, dependence structure and faithfulness — entirely client-side.">
+<meta name="theme-color" content="#0E1116">
+<link rel="manifest" href="./manifest.webmanifest">
+<link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
+<link rel="apple-touch-icon" href="./icons/icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./style.css">
+<script defer src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.22.0/dist/tf.min.js"></script>
+<script defer src="./app.js"></script>
+</head>
+<body>
+
+<header class="app-header">
+  <div class="brand">
+    <span class="brand-phi">φ</span>
+    <div>
+      <h1>XAI Sandbox</h1>
+      <p class="tagline">A client-side Shapley laboratory</p>
+    </div>
+    <button id="install-btn" class="btn ghost small" hidden>Install</button>
+  </div>
+  <ol class="pipeline" id="pipeline">
+    <li data-stage="data"><span class="dot"></span>Data</li>
+    <li data-stage="model"><span class="dot"></span>Model f&#770;</li>
+    <li data-stage="phi"><span class="dot"></span>Attributions φ</li>
+    <li data-stage="diag"><span class="dot"></span>Diagnostics</li>
+  </ol>
+</header>
+
+<main id="main">
+
+<!-- ============ DATA ============ -->
+<section class="tab-panel active" id="panel-data">
+  <div class="card">
+    <h2>1 · Load a tabular dataset</h2>
+    <p class="lede">Everything runs in this tab. No row of your data leaves the device — there is no server to send it to.</p>
+    <div class="btn-row">
+      <button class="btn primary" id="btn-demo">Generate benchmark dataset</button>
+      <label class="btn" for="csv-input">Upload CSV<input type="file" id="csv-input" accept=".csv,text/csv" hidden></label>
+    </div>
+    <p class="hint">The benchmark generator draws n = 600 samples from a known structural equation
+      — logit(y) = 1.8·glucose + 1.1·bmi² − 1.4·insulin·age + 0.6·pedigree + ε —
+      so attributions can be checked against ground truth. Uploaded CSVs need a header row; pick the target column below. Numeric columns only; ≤ 16 features recommended.</p>
+    <div id="target-row" class="field-row" hidden>
+      <label for="target-select">Target column</label>
+      <select id="target-select"></select>
+      <button class="btn small" id="btn-apply-target">Apply</button>
+    </div>
+    <div id="data-summary" class="summary" hidden></div>
+  </div>
+  <div class="card" id="preview-card" hidden>
+    <h3>Preview <span class="mono muted" id="preview-shape"></span></h3>
+    <div class="table-scroll"><table id="preview-table"></table></div>
+  </div>
+</section>
+
+<!-- ============ TRAIN ============ -->
+<section class="tab-panel" id="panel-train">
+  <div class="card">
+    <h2>2 · Train f&#770; with TensorFlow.js</h2>
+    <p class="lede">A small MLP is fit on-device (WebGL backend where available). Features are standardised; an 80/20 split is held out for evaluation and explanation.</p>
+    <div class="grid-2">
+      <div class="field"><label for="hidden-units">Hidden units</label>
+        <select id="hidden-units"><option>8</option><option selected>16</option><option>32</option><option>64</option></select></div>
+      <div class="field"><label for="hidden-layers">Hidden layers</label>
+        <select id="hidden-layers"><option>1</option><option selected>2</option><option>3</option></select></div>
+      <div class="field"><label for="epochs">Epochs</label>
+        <select id="epochs"><option>30</option><option selected>60</option><option>120</option></select></div>
+      <div class="field"><label for="lr">Learning rate</label>
+        <select id="lr"><option>0.01</option><option selected>0.005</option><option>0.001</option></select></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn primary" id="btn-train" disabled>Train model</button>
+    </div>
+    <div class="progress" id="train-progress" hidden><div class="bar"></div><span class="label mono"></span></div>
+    <div id="train-metrics" class="summary" hidden></div>
+  </div>
+  <div class="card" id="loss-card" hidden>
+    <h3>Optimisation trace</h3>
+    <canvas id="loss-canvas" class="plot" height="220"></canvas>
+  </div>
+</section>
+
+<!-- ============ EXPLAIN ============ -->
+<section class="tab-panel" id="panel-explain">
+  <div class="card">
+    <h2>3 · Attribute with Kernel SHAP &amp; Integrated Gradients</h2>
+    <p class="lede">Kernel SHAP solves the Shapley-kernel weighted regression of Lundberg &amp; Lee (2017); with ≤ 11 features every coalition is enumerated, so the values are exact for the chosen background. Integrated Gradients uses tf.js autodiff along the mean-baseline path.</p>
+    <div class="grid-2">
+      <div class="field"><label for="n-explain">Instances to explain</label>
+        <select id="n-explain"><option>30</option><option selected>60</option><option>100</option></select></div>
+      <div class="field"><label for="n-background">Background size</label>
+        <select id="n-background"><option>15</option><option selected>25</option><option>50</option></select></div>
+    </div>
+    <div class="btn-row"><button class="btn primary" id="btn-explain" disabled>Compute attributions</button></div>
+    <div class="progress" id="explain-progress" hidden><div class="bar"></div><span class="label mono"></span></div>
+  </div>
+
+  <div class="card viz-card" id="beeswarm-card" hidden>
+    <h3>SHAP summary <span class="muted">— tap a point to inspect that instance</span></h3>
+    <div class="legend"><span class="chip pos"></span>high feature value <span class="chip neg"></span>low feature value</div>
+    <canvas id="beeswarm-canvas" class="plot tall"></canvas>
+  </div>
+
+  <div class="card viz-card" id="local-card" hidden>
+    <h3>Local explanation <span class="mono muted" id="local-title"></span></h3>
+    <div class="field-row">
+      <label for="instance-select">Instance</label>
+      <select id="instance-select"></select>
+      <span class="mono" id="local-pred"></span>
+    </div>
+    <canvas id="waterfall-canvas" class="plot"></canvas>
+    <p class="hint" id="local-additivity"></p>
+  </div>
+
+  <div class="card viz-card" id="dependence-card" hidden>
+    <h3>Dependence plot</h3>
+    <div class="field-row">
+      <label for="dep-feature">Feature</label><select id="dep-feature"></select>
+      <label for="dep-color">Colour by</label><select id="dep-color"></select>
+    </div>
+    <canvas id="dependence-canvas" class="plot"></canvas>
+    <p class="hint">Vertical dispersion at a fixed feature value indicates interaction; the colour axis shows the automatically ranked (or chosen) interacting feature.</p>
+  </div>
+
+  <div class="card viz-card" id="global-card" hidden>
+    <h3>Global importance — mean |φ| vs IG vs permutation</h3>
+    <canvas id="global-canvas" class="plot tall"></canvas>
+    <div class="btn-row">
+      <button class="btn small" id="btn-export-phi">Export φ as CSV</button>
+      <button class="btn small" id="btn-export-png">Save summary PNG</button>
+    </div>
+  </div>
+</section>
+
+<!-- ============ DIAGNOSE ============ -->
+<section class="tab-panel" id="panel-diagnose">
+  <div class="card">
+    <h2>4 · Faithfulness diagnostics</h2>
+    <p class="lede">An attribution is only useful if it tracks the model. These tests perturb inputs toward the background baseline and check whether φ predicted the resulting change in f&#770;.</p>
+    <div class="btn-row"><button class="btn primary" id="btn-diagnose" disabled>Run diagnostics</button></div>
+    <div class="progress" id="diag-progress" hidden><div class="bar"></div><span class="label mono"></span></div>
+  </div>
+
+  <div class="card viz-card" id="curves-card" hidden>
+    <h3>Deletion &amp; insertion curves <span class="muted">(Petsiuk et al., 2018)</span></h3>
+    <canvas id="curves-canvas" class="plot"></canvas>
+    <div id="auc-summary" class="summary"></div>
+    <p class="hint">Deletion: features are removed (set to baseline) in decreasing |φ| order — a faithful explainer produces a steep early drop, i.e. low AUC. Insertion is the reverse: high AUC is better. Random-order curves are shown as a null reference.</p>
+  </div>
+
+  <div class="card viz-card" id="faith-card" hidden>
+    <h3>Scorecard</h3>
+    <div id="faith-summary" class="summary"></div>
+    <p class="hint">Faithfulness correlation (Bhatt et al., 2020): Pearson r between Σ<sub>i∈S</sub> φ<sub>i</sub> and f&#770;(x) − f&#770;(x<sub>S→baseline</sub>) over random subsets S. IG completeness gap: |Σφ<sup>IG</sup> − (f&#770;(x) − f&#770;(baseline))|, which should be ≈ 0 by construction. Rank agreement: mean Spearman ρ between per-instance SHAP and IG orderings — a consistency (sanity) check between two independent estimators, not proof of correctness.</p>
+  </div>
+</section>
+
+<!-- ============ NOTES ============ -->
+<section class="tab-panel" id="panel-notes">
+  <div class="card prose">
+    <h2>Methodology notes</h2>
+    <h3>Kernel SHAP</h3>
+    <p>For a coalition z ∈ {0,1}<sup>M</sup>, the value function is v(z) = E<sub>b~B</sub>[f&#770;(x<sub>z</sub> ⊕ b<sub>1−z</sub>)], estimated by averaging over the background set B. Shapley values are the solution of a weighted least-squares problem with kernel weight π(z) = (M−1)/(C(M,|z|)·|z|·(M−|z|)), subject to the efficiency constraint Σφ = f&#770;(x) − E[f&#770;]. This app enumerates all 2<sup>M</sup>−2 proper coalitions when M ≤ 11 (exact under the interventional value function) and otherwise uses paired coalition sampling under the kernel distribution.</p>
+    <h3>Integrated Gradients</h3>
+    <p>IG<sub>i</sub>(x) = (x<sub>i</sub> − x&#775;<sub>i</sub>) ∫<sub>0</sub><sup>1</sup> ∂f&#770;(x&#775; + α(x − x&#775;))/∂x<sub>i</sub> dα, approximated with a 64-step Riemann sum via tf.js autodiff, baseline x&#775; = training mean. The completeness axiom gives an internal consistency check reported on the Diagnose tab.</p>
+    <h3>Reading the diagnostics</h3>
+    <p>Deletion/insertion AUCs are comparative, not absolute: judge them against the random-order null shown in grey. Faithfulness correlation is sensitive to the same off-manifold evaluation problem as all baseline-replacement tests; the benchmark generator exists precisely so the pipeline can be validated where ground truth is known before it is trusted on real data.</p>
+    <h3>References</h3>
+    <ul>
+      <li>Lundberg &amp; Lee (2017) — A unified approach to interpreting model predictions, NeurIPS.</li>
+      <li>Sundararajan, Taly &amp; Yan (2017) — Axiomatic attribution for deep networks, ICML.</li>
+      <li>Petsiuk, Das &amp; Saenko (2018) — RISE: randomised input sampling, BMVC.</li>
+      <li>Bhatt, Weller &amp; Moura (2020) — Evaluating and aggregating feature-based model explanations, IJCAI.</li>
+      <li>Covert, Lundberg &amp; Lee (2021) — Explaining by removing, JMLR.</li>
+    </ul>
+    <p class="hint">Built as a companion artefact for explainable-AI manuscripts and teaching. Static PWA; works offline after first load; no analytics, no server.</p>
+  </div>
+</section>
+
+</main>
+
+<nav class="tabbar" id="tabbar">
+  <button data-tab="data" class="active"><span class="glyph">▦</span>Data</button>
+  <button data-tab="train"><span class="glyph">ƒ</span>Train</button>
+  <button data-tab="explain"><span class="glyph">φ</span>Explain</button>
+  <button data-tab="diagnose"><span class="glyph">✓</span>Diagnose</button>
+  <button data-tab="notes"><span class="glyph">§</span>Notes</button>
+</nav>
+
+<div id="toast" class="toast" hidden></div>
+</body>
+</html>
