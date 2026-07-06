@@ -42,7 +42,8 @@ first and drives the pure-noise feature to the smallest attribution.
    GitHub from mangling the asset paths).
 2. Push, then in **Settings → Pages** set the source to the `main` branch,
    root folder.
-3. Open `https://<user>.github.io/<repo>/`. On mobile Chrome/Edge use
+3. Open `https://USERNAME.github.io/REPO/` (substitute your account and
+   repository name). On mobile Chrome/Edge use
    *Add to Home Screen* (or the in-app **Install** button); on iOS Safari use
    *Share → Add to Home Screen*. The app then works offline.
 

@@ -208,6 +208,7 @@ async function train() {
   const bar = prog.querySelector('.bar'), lbl = prog.querySelector('.label');
   $('#btn-train').disabled = true;
   const losses = [], vlosses = [];
+  $('#loss-card').hidden = false; // visible before the live trace is drawn
 
   await model.fit(xs, ys, {
     epochs, batchSize: 32, validationSplit: 0.15, shuffle: true,
@@ -228,7 +229,6 @@ async function train() {
   // evaluate on held-out test
   const metrics = evaluate();
   renderTrainMetrics(metrics);
-  $('#loss-card').hidden = false;
   drawLoss(losses, vlosses);
   $('#btn-train').disabled = false;
   $('#btn-explain').disabled = false;
@@ -434,9 +434,11 @@ async function explain() {
   S.explain = { rows, phi: phiAll, ig: igAll, perm, fx: fxAll, base: v0, idxEnd: nExp };
   bar.style.width = '100%'; lbl.textContent = 'done';
 
-  renderBeeswarm(); populateInstanceSelect(); renderLocal(0);
-  populateDependence(); renderDependence(); renderGlobal();
+  // cards must be visible BEFORE drawing — a hidden (display:none) canvas
+  // measures 0×0 via getBoundingClientRect and would render nothing.
   ['beeswarm-card','local-card','dependence-card','global-card'].forEach((id)=>$('#'+id).hidden=false);
+  populateInstanceSelect(); populateDependence();
+  renderBeeswarm(); renderLocal(0); renderDependence(); renderGlobal();
   $('#btn-diagnose').disabled = false;
   markStage('phi');
   toast('Attributions computed');
@@ -529,11 +531,16 @@ function permutationImportance() {
 function setupCanvas(cv) {
   const dpr = window.devicePixelRatio || 1;
   const rect = cv.getBoundingClientRect();
-  cv.width = rect.width * dpr; cv.height = rect.height * dpr;
+  // Fall back to layout/parent width and the CSS height if the element is
+  // momentarily unmeasurable (e.g. drawn before its container is shown).
+  const cssH = cv.classList.contains('tall') ? 320 : 240;
+  const w = rect.width || cv.offsetWidth || (cv.parentElement ? cv.parentElement.clientWidth - 32 : 320) || 320;
+  const h = rect.height || cssH;
+  cv.width = w * dpr; cv.height = h * dpr;
   const ctx = cv.getContext('2d');
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-  ctx.clearRect(0, 0, rect.width, rect.height);
-  return { ctx, w: rect.width, h: rect.height };
+  ctx.clearRect(0, 0, w, h);
+  return { ctx, w, h };
 }
 const COL = { ink:'#E9EEF4', muted:'#8A94A6', amber:'#F2A93B', pos:'#FF4D6D', neg:'#4D9FFF', grid:'#242D39', ok:'#6fd3a3' };
 
@@ -780,8 +787,8 @@ async function diagnose() {
 
   S.diag = { delShap, insShap, delRand, insRand, faithCorr, igGap, rankAgree, M };
   bar.style.width='100%';lbl.textContent='done';
-  drawCurves(); renderAUC(); renderFaithScorecard();
   ['curves-card','faith-card'].forEach((id)=>$('#'+id).hidden=false);
+  drawCurves(); renderAUC(); renderFaithScorecard();
   markStage('diag');
   toast('Diagnostics complete');
 }
